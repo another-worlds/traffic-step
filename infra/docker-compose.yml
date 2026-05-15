@@ -1,0 +1,79 @@
+version: "3.9"
+
+services:
+  frontend:
+    build: ../frontend
+    container_name: ts_frontend
+    environment:
+      - API_BASE_URL=http://backend:8000
+      - DEBUG=1
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    build: ../backend
+    container_name: ts_backend
+    environment:
+      - DATABASE_URL=postgresql+psycopg://ts:ts@db:5432/traffic_step
+      - REDIS_URL=redis://redis:6379/0
+      - VIDEO_STORAGE_PATH=/data/videos
+      - DEBUG=1
+    ports:
+      - "8000:8000"
+    volumes:
+      - media_data:/data
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  worker-gpu:
+    build: ../worker
+    container_name: ts_worker_gpu
+    environment:
+      - DATABASE_URL=postgresql+psycopg://ts:ts@db:5432/traffic_step
+      - REDIS_URL=redis://redis:6379/0
+      - VIDEO_STORAGE_PATH=/data/videos
+      - YOLO_PROFILE_DEFAULT=balanced
+      - YOLO_MODELS={"fast":"yolov8n.pt","balanced":"yolov8m.pt","accurate":"yolov8x.pt"}
+      - CUDA_VISIBLE_DEVICES=0
+    volumes:
+      - media_data:/data
+    depends_on:
+      - backend
+      - redis
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  db:
+    image: postgres:16
+    container_name: ts_db
+    environment:
+      - POSTGRES_USER=ts
+      - POSTGRES_PASSWORD=ts
+      - POSTGRES_DB=traffic_step
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    container_name: ts_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  media_data:
